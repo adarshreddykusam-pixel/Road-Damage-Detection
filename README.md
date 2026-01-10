@@ -99,13 +99,14 @@ Performance evaluated using **Mean Average Precision (mAP)**:
 ---
 
 ## Inference & Outputs
-- ~2,300+ test images processed  
+- ~26K+ test images processed  
 - One prediction file per image  
 
 ### Output Format
 <class_id> <x_center> <y_center> <width> <height> <confidence>
 
 ### Output Structure
+
 predictions/
 ├── 000001.txt
 ├── 000002.txt
@@ -117,6 +118,7 @@ Outputs are structured for direct integration into analytics or inspection pipel
 ---
 
 ## Repository Structure
+
 ├── data.yaml
 ├── training_notebook.ipynb
 ├── predictions/
