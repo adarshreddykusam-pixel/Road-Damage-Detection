@@ -105,26 +105,28 @@ Performance evaluated using **Mean Average Precision (mAP)**:
 ### Output Format
 <class_id> <x_center> <y_center> <width> <height> <confidence>
 
-### Output Structure
+Output Structure
+└── predictions/
+    ├── 000001.txt
+    ├── 000002.txt
+    ├── 000003.txt
+    └── ...
 
-predictions/
-├── 000001.txt
-├── 000002.txt
-└── ...
+Outputs are structured for direct integration into analytics or inspection pipelines.
+
 
 
 Outputs are structured for direct integration into analytics or inspection pipelines.
 
 ---
 
-## Repository Structure
-
+Repository Structure
 ├── data.yaml
 ├── training_notebook.ipynb
 ├── predictions/
 │   ├── *.txt
 ├── best.pt
-├── README.md
+└── README.md
 
 
 
