@@ -122,9 +122,10 @@ Outputs are structured for direct integration into analytics or inspection pipel
 ├── data.yaml
 ├── training_notebook.ipynb
 ├── predictions/
-│ ├── *.txt
+│   ├── *.txt
 ├── best.pt
 ├── README.md
+
 
 
 ---
