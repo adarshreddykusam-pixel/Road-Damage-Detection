@@ -1,3 +1,16 @@
+---
+title: Road Damage Detection
+emoji: 👁
+colorFrom: gray
+colorTo: gray
+sdk: gradio
+sdk_version: 6.31.0
+python_version: '3.12'
+app_file: app.py
+pinned: false
+license: mit
+---
+
 # 🛣️ Automated Road Damage Detection System (Image & Video)
 
 [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-yellow?style=for-the-badge&logo=huggingface)](https://huggingface.co/spaces/adarshreddykusam/road-damage-detection)

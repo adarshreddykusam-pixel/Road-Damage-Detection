@@ -13,18 +13,12 @@ try:
 except ImportError:
     has_spaces = False
 
-# Select available hardware acceleration
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
 # Load YOLOv8 fine-tuned road damage weights
 model_path = "best.pt"
 if not os.path.exists(model_path):
-    # Fallback to yolov8n.pt if best.pt is absent
     model_path = "yolov8n.pt"
 
 model = YOLO(model_path)
-if device == "cuda":
-    model.to("cuda")
 
 
 def run_image_inference(image, conf_thresh, iou_thresh, enhance_contrast):
@@ -32,6 +26,7 @@ def run_image_inference(image, conf_thresh, iou_thresh, enhance_contrast):
     if image is None:
         return None, "⚠️ Please upload a road image to begin inspection.", "{}"
     
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     annotated_img, report, json_log = predict_utils.predict_image(
         image=image,
         model=model,
@@ -48,6 +43,7 @@ def run_video_inference(video_path, conf_thresh, frame_stride):
     if not video_path:
         return None, "⚠️ Please upload a dashcam or road survey video file."
     
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     out_video, report = predict_utils.predict_video(
         video_path=video_path,
         model=model,
@@ -62,7 +58,7 @@ def run_video_inference(video_path, conf_thresh, frame_stride):
 # Wrap GPU execution functions for Hugging Face ZeroGPU
 if has_spaces:
     infer_image = spaces.GPU(run_image_inference)
-    infer_video = spaces.GPU(run_video_inference)
+    infer_video = spaces.GPU(duration=120)(run_video_inference)
 else:
     infer_image = run_image_inference
     infer_video = run_video_inference
@@ -164,7 +160,7 @@ with gr.Blocks(title="Road Damage Detection System (Image & Video)") as app:
                 - **Other Corruption (Class 3)**: Superficial (`Weight: 0.8x`). Surface spalling, edge crumbling, and minor asphalt patchwork degradation.
 
                 #### 2. Road Hazard Severity Index Formulation
-                The system computes a normalized Road Distress Severity Index ($S \in [0, 100]$):
+                The system computes a normalized Road Distress Severity Index ($S \\in [0, 100]$):
                 $$\\text{Severity Index} = \\min\\left(100, \\sum_{i=1}^N \\left[ w_{\\text{class}} \\cdot 15 + \\left(\\frac{\\text{Area}_i}{\\text{Area}_{\\text{frame}}} \\cdot 250 \\cdot w_{\\text{class}}\\right) \\cdot \\text{conf}_i \\right] + P_{\\text{pothole}}\\right)$$
                 Where $w_{\\text{class}}$ is the hazard weight, and $P_{\\text{pothole}}$ applies an exponential penalty for multiple concurrent potholes.
 

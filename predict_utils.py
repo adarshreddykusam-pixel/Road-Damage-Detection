@@ -4,6 +4,7 @@ from PIL import Image
 import json
 import os
 import tempfile
+import torch
 
 # 5 Target Road Damage Classes with civil engineering hazard weights and standardized colors
 CLASS_INFO = {
@@ -161,13 +162,17 @@ def calculate_severity_index(boxes, frame_shape):
     return severity_score, condition, recommendation
 
 
-def predict_image(image, model, conf_thresh=0.20, iou_thresh=0.45, enhance_contrast=False, device="cpu"):
+def predict_image(image, model, conf_thresh=0.20, iou_thresh=0.45, enhance_contrast=False, device=None):
     """
     Runs full conference-level inference on a single image.
     Returns: annotated PIL image, markdown report, structured JSON log.
     """
     if image is None:
         return None, "Please upload a road image.", "{}"
+
+    # Auto-detect device if None
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Convert PIL to BGR OpenCV format
     img_array = np.array(image.convert("RGB"))
@@ -243,13 +248,16 @@ def predict_image(image, model, conf_thresh=0.20, iou_thresh=0.45, enhance_contr
     return annotated_pil, report, json_payload
 
 
-def predict_video(video_path, model, conf_thresh=0.20, iou_thresh=0.45, frame_stride=2, device="cpu", progress=None):
+def predict_video(video_path, model, conf_thresh=0.20, iou_thresh=0.45, frame_stride=2, device=None, progress=None):
     """
     Processes video files (dashcam, survey footage) frame-by-frame,
     drawing bounding boxes, on-screen HUD, and generating temporal defect analytics.
     """
     if not video_path or not os.path.exists(video_path):
         return None, "Please upload a valid video file."
+
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
