@@ -6,7 +6,7 @@ from ultralytics import YOLO
 
 import predict_utils
 
-# ZeroGPU support on Hugging Face Spaces (with graceful fallback for local CPU/CUDA)
+# Check if running in Hugging Face ZeroGPU environment
 try:
     import spaces
     has_spaces = True
@@ -14,54 +14,90 @@ except ImportError:
     has_spaces = False
 
 # Load YOLOv8 fine-tuned road damage weights
-model_path = "best.pt"
-if not os.path.exists(model_path):
-    model_path = "yolov8n.pt"
-
+model_path = "best.pt" if os.path.exists("best.pt") else "yolov8n.pt"
 model = YOLO(model_path)
 
 
-def run_image_inference(image, conf_thresh, iou_thresh, enhance_contrast):
-    """Handler for image inspection tab"""
+# Core CPU Inference (Unlimited Free Usage — Never Hits Quota Limits)
+def run_image_cpu(image, conf_thresh, iou_thresh, enhance_contrast):
     if image is None:
         return None, "⚠️ Please upload a road image to begin inspection.", "{}"
-    
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    annotated_img, report, json_log = predict_utils.predict_image(
+    return predict_utils.predict_image(
         image=image,
         model=model,
         conf_thresh=conf_thresh,
         iou_thresh=iou_thresh,
         enhance_contrast=enhance_contrast,
-        device=device
+        device="cpu"
     )
-    return annotated_img, report, json_log
 
 
-def run_video_inference(video_path, conf_thresh, frame_stride):
-    """Handler for video inspection tab"""
+def run_video_cpu(video_path, conf_thresh, frame_stride):
     if not video_path:
         return None, "⚠️ Please upload a dashcam or road survey video file."
-    
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    out_video, report = predict_utils.predict_video(
+    return predict_utils.predict_video(
         video_path=video_path,
         model=model,
         conf_thresh=conf_thresh,
         iou_thresh=0.45,
         frame_stride=int(frame_stride),
-        device=device
+        device="cpu"
     )
-    return out_video, report
 
 
-# Wrap GPU execution functions for Hugging Face ZeroGPU
+# Optional GPU Inference on Hugging Face Spaces (with small requested duration to protect quota)
 if has_spaces:
-    infer_image = spaces.GPU(run_image_inference)
-    infer_video = spaces.GPU(duration=120)(run_video_inference)
-else:
-    infer_image = run_image_inference
-    infer_video = run_video_inference
+    @spaces.GPU(duration=15)
+    def run_image_gpu(image, conf_thresh, iou_thresh, enhance_contrast):
+        dev = "cuda" if torch.cuda.is_available() else "cpu"
+        return predict_utils.predict_image(
+            image=image,
+            model=model,
+            conf_thresh=conf_thresh,
+            iou_thresh=iou_thresh,
+            enhance_contrast=enhance_contrast,
+            device=dev
+        )
+
+    @spaces.GPU(duration=30)
+    def run_video_gpu(video_path, conf_thresh, frame_stride):
+        dev = "cuda" if torch.cuda.is_available() else "cpu"
+        return predict_utils.predict_video(
+            video_path=video_path,
+            model=model,
+            conf_thresh=conf_thresh,
+            iou_thresh=0.45,
+            frame_stride=int(frame_stride),
+            device=dev
+        )
+
+
+def handle_image_request(image, conf_thresh, iou_thresh, enhance_contrast, compute_engine):
+    """Routes image inference to CPU or ZeroGPU with seamless fallback"""
+    if "ZeroGPU" in str(compute_engine) and has_spaces:
+        try:
+            return run_image_gpu(image, conf_thresh, iou_thresh, enhance_contrast)
+        except Exception:
+            # If ZeroGPU quota is exceeded, automatically process on CPU
+            res_img, report, json_log = run_image_cpu(image, conf_thresh, iou_thresh, enhance_contrast)
+            notice = "> 💡 *ZeroGPU quota was busy/exceeded. Processed seamlessly via high-speed CPU.*\n\n"
+            return res_img, notice + report, json_log
+    
+    return run_image_cpu(image, conf_thresh, iou_thresh, enhance_contrast)
+
+
+def handle_video_request(video_path, conf_thresh, frame_stride, compute_engine):
+    """Routes video inference to CPU or ZeroGPU with seamless fallback"""
+    if "ZeroGPU" in str(compute_engine) and has_spaces:
+        try:
+            return run_video_gpu(video_path, conf_thresh, frame_stride)
+        except Exception:
+            # If ZeroGPU quota is exceeded, automatically process on CPU
+            res_vid, report = run_video_cpu(video_path, conf_thresh, frame_stride)
+            notice = "> 💡 *ZeroGPU quota was busy/exceeded. Processed seamlessly via high-speed CPU.*\n\n"
+            return res_vid, notice + report
+            
+    return run_video_cpu(video_path, conf_thresh, frame_stride)
 
 
 # Build Gradio Multi-Tab Interface
@@ -81,6 +117,11 @@ with gr.Blocks(title="Road Damage Detection System (Image & Video)") as app:
                 with gr.Column(scale=5):
                     image_input = gr.Image(type="pil", label="Upload Road Image (JPG, PNG, WebP)")
                     with gr.Accordion("⚙️ Inference & Preprocessing Settings", open=True):
+                        engine_choice = gr.Radio(
+                            choices=["⚡ CPU (Unlimited Free Usage / Instant)", "🚀 ZeroGPU (Fast A10G)"],
+                            value="⚡ CPU (Unlimited Free Usage / Instant)",
+                            label="Compute Acceleration"
+                        )
                         conf_slider = gr.Slider(
                             minimum=0.05,
                             maximum=0.90,
@@ -108,8 +149,8 @@ with gr.Blocks(title="Road Damage Detection System (Image & Video)") as app:
                         json_output = gr.Code(label="Exportable Payload", language="json")
 
             detect_img_btn.click(
-                fn=infer_image,
-                inputs=[image_input, conf_slider, iou_slider, clahe_check],
+                fn=handle_image_request,
+                inputs=[image_input, conf_slider, iou_slider, clahe_check, engine_choice],
                 outputs=[image_output, report_output, json_output]
             )
 
@@ -119,6 +160,11 @@ with gr.Blocks(title="Road Damage Detection System (Image & Video)") as app:
                 with gr.Column(scale=5):
                     video_input = gr.Video(label="Upload Dashcam / Inspection Video (MP4, MOV, AVI)")
                     with gr.Accordion("⚙️ Video Processing Parameters", open=True):
+                        vid_engine_choice = gr.Radio(
+                            choices=["⚡ CPU (Unlimited Free Usage)", "🚀 ZeroGPU (Fast A10G)"],
+                            value="⚡ CPU (Unlimited Free Usage)",
+                            label="Compute Acceleration"
+                        )
                         vid_conf_slider = gr.Slider(
                             minimum=0.10,
                             maximum=0.80,
@@ -140,8 +186,8 @@ with gr.Blocks(title="Road Damage Detection System (Image & Video)") as app:
                     vid_report_output = gr.Markdown(label="Route Defect & Temporal Analytics")
 
             detect_vid_btn.click(
-                fn=infer_video,
-                inputs=[video_input, vid_conf_slider, stride_slider],
+                fn=handle_video_request,
+                inputs=[video_input, vid_conf_slider, stride_slider, vid_engine_choice],
                 outputs=[video_output, vid_report_output]
             )
 
